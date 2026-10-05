@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Secrets and local config - never commit
+.env
+*.json.key
+service-account*.json
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,26 @@
+# Google Cloud documentation pages to ingest - one URL per line.
+# Lines starting with # are ignored. Add or remove pages freely, then re-run:
+#   python scripts/fetch_docs.py
+# Google Cloud docs content is licensed CC BY 4.0 - each saved file keeps its source URL.
+
+# --- Gemini / Agent Platform (formerly Vertex AI) ---
+https://cloud.google.com/vertex-ai/generative-ai/docs/learn/overview
+https://cloud.google.com/vertex-ai/generative-ai/docs/embeddings/get-text-embeddings
+https://cloud.google.com/vertex-ai/generative-ai/docs/grounding/overview
+https://cloud.google.com/vertex-ai/generative-ai/docs/rag-engine/rag-overview
+
+# --- Cloud Run ---
+https://cloud.google.com/run/docs/overview/what-is-cloud-run
+https://cloud.google.com/run/docs/quickstarts/build-and-deploy/deploy-python-service
+https://cloud.google.com/run/docs/configuring/services/secrets
+
+# --- Cloud SQL for PostgreSQL ---
+https://cloud.google.com/sql/docs/postgres/features
+https://cloud.google.com/sql/docs/postgres/connect-run
+https://cloud.google.com/sql/docs/postgres/work-with-vectors
+
+# --- Security, identity, cost ---
+https://cloud.google.com/iam/docs/overview
+https://cloud.google.com/iam/docs/service-account-overview
+https://cloud.google.com/docs/authentication/application-default-credentials
+https://cloud.google.com/billing/docs/how-to/budgets

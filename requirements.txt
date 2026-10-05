@@ -1,0 +1,20 @@
+# Step 0 - talking to Gemini and the embedding model on Google Cloud
+google-genai>=1.0
+python-dotenv>=1.0
+
+# Step 1 - fetching docs
+requests>=2.31
+trafilatura>=1.12
+
+# Step 1 - storing vectors in Postgres
+psycopg[binary]>=3.1
+pgvector>=0.3
+psycopg-pool>=3.2
+
+# Step 2 - retrieval API
+fastapi>=0.110
+uvicorn[standard]>=0.29
+
+# Step 3 - the agent
+langgraph>=0.2
+httpx>=0.27

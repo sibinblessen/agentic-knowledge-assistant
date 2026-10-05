@@ -1,0 +1,24 @@
+# Local Postgres with the pgvector extension, for development.
+# Start:  docker compose up -d      Stop:  docker compose down
+# Reset all data:  docker compose down -v
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: vertex-agent-db
+    environment:
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: agent        # local only - never reuse for Cloud SQL
+      POSTGRES_DB: knowledge
+    ports:
+      - "5433:5432"   # 5433 on your Mac -> 5432 in the container (avoids clashing with another local Postgres)
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Runs once, the first time the database is created
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d knowledge"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  pgdata:
