@@ -31,3 +31,8 @@ SEARCH_API_URL = os.getenv("SEARCH_API_URL", "http://localhost:8000").rstrip("/"
 
 # How many times the agent may rewrite the query before giving up
 MAX_REWRITES = int(os.getenv("MAX_REWRITES", "2"))
+
+# Grounding check: the judge model can differ from the answer model (default: same)
+JUDGE_MODEL = os.getenv("JUDGE_MODEL") or GEMINI_MODEL
+# Max answer generations (1 original + regenerations) before returning with a warning
+MAX_GENERATIONS = int(os.getenv("MAX_GENERATIONS", "2"))

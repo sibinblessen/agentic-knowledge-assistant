@@ -1,7 +1,7 @@
 """
 The LangGraph agent.
 
-Step 3b graph:
+Step 3c graph (rewrite/retrieve loop from 3b, plus a grounding check):
 
     START -> rewrite --(out of scope)--> generate ("I only cover Google Cloud docs")
                 |
@@ -12,6 +12,11 @@ Step 3b graph:
                 +-------------------------------------------------+
                             |
                             +--(nothing relevant, no attempts left)--> generate ("not found")
+
+    generate -> check --(grounded)--> END
+       ^          |
+       |          +--(not grounded, generations left)--> generate (told which claims failed)
+       |          +--(not grounded, none left)--> END with a warning
 """
 
 from functools import lru_cache
@@ -36,6 +41,11 @@ class AgentState(TypedDict, total=False):
     passages: list[dict]   # relevant passages (score >= MIN_SCORE)
     answer: str
     sources: list[str]
+    generations: int              # how many answers we've written
+    grounded: bool                # judge verdict on the latest answer
+    unsupported_claims: list[str] # sentences the judge could not verify
+    warning: str                  # set if we give up while still not grounded
+    check_skipped: bool           # True for fixed replies that make no factual claims
 
 
 # ---------------------------------------------------------------------------
@@ -142,8 +152,11 @@ def after_retrieve(state: AgentState) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Node 3: generate - unchanged from 3a
+# Node 3: generate - answer only from the passages (+ feedback when regenerating)
 # ---------------------------------------------------------------------------
+def format_passages(passages: list[dict]) -> str:
+    return "\n\n".join(f"[{i}] {p['content']}" for i, p in enumerate(passages, 1))
+
 ANSWER_SYSTEM = """You are a Google Cloud documentation assistant.
 Answer the question using ONLY the numbered passages provided.
 Rules:
@@ -159,24 +172,85 @@ OUT_OF_SCOPE = "That's outside what I can help with. I answer questions about Go
 
 def generate(state: AgentState) -> dict:
     if not state.get("in_scope", True):
-        return {"answer": OUT_OF_SCOPE, "sources": []}
+        return {"answer": OUT_OF_SCOPE, "sources": [], "generations": 0}
     passages = state.get("passages", [])
     if not passages:
-        return {"answer": NOT_FOUND, "sources": []}
+        return {"answer": NOT_FOUND, "sources": [], "generations": 0}
 
-    numbered = "\n\n".join(f"[{i}] {p['content']}" for i, p in enumerate(passages, 1))
     prompt = (
-        f"Passages:\n\n{numbered}\n\n"
+        f"Passages:\n\n{format_passages(passages)}\n\n"
         f"Question: {state['question']}\n"
         f"(Interpreted as: {state['search_query']})"
     )
+    if state.get("unsupported_claims"):
+        # Regeneration: tell Gemini exactly what the judge rejected last time.
+        failed = "\n".join(f"- {c}" for c in state["unsupported_claims"])
+        prompt += (
+            "\n\nA fact-checker found these statements in your previous answer NOT supported "
+            f"by the passages:\n{failed}\n"
+            "Write the answer again. Remove those statements or rephrase them so they say only "
+            "what the passages say, with correct citations."
+        )
     answer = llm.generate(prompt, system=ANSWER_SYSTEM)
 
     cited = []
     for i, p in enumerate(passages, 1):
         if f"[{i}]" in answer and p["source"] not in cited:
             cited.append(p["source"])
-    return {"answer": answer, "sources": cited}
+    return {"answer": answer, "sources": cited, "generations": state.get("generations", 0) + 1}
+
+
+# ---------------------------------------------------------------------------
+# Node 4: check - a second Gemini call acts as a fact-checker (LLM-as-judge)
+# ---------------------------------------------------------------------------
+class GroundingVerdict(BaseModel):
+    grounded: bool = Field(description="True only if every factual statement is supported by the passages")
+    unsupported_claims: list[str] = Field(
+        default_factory=list,
+        description="Each statement that is not supported, copied exactly from the answer",
+    )
+
+
+JUDGE_SYSTEM = """You are a strict fact-checker. You receive numbered source passages and an answer.
+Check the answer one statement at a time.
+
+A statement is SUPPORTED only if:
+- the passages state it, or it follows directly from them (paraphrasing is fine), AND
+- the passage number(s) it cites actually contain that information.
+
+A statement is UNSUPPORTED if it adds facts not in the passages (even if true in reality),
+overstates them (e.g. "always" where the passages say "by default"), or cites the wrong passage.
+
+Ignore statements that only say what the passages do NOT cover.
+Set grounded to true only if there are no unsupported statements.
+List every unsupported statement exactly as written in the answer."""
+
+
+def check(state: AgentState) -> dict:
+    passages = state.get("passages", [])
+    if not state.get("in_scope", True) or not passages:
+        # Fixed refusal messages make no factual claims: nothing to verify.
+        return {"grounded": True, "unsupported_claims": [], "check_skipped": True}
+
+    prompt = f"Passages:\n\n{format_passages(passages)}\n\nAnswer to check:\n{state['answer']}"
+    verdict = llm.generate_json(prompt, JUDGE_SYSTEM, GroundingVerdict, model=config.JUDGE_MODEL)
+
+    update = {"grounded": verdict.grounded, "unsupported_claims": verdict.unsupported_claims}
+    if not verdict.grounded and state.get("generations", 0) >= config.MAX_GENERATIONS:
+        update["warning"] = (
+            "Some statements in this answer could not be verified against the documentation: "
+            + "; ".join(verdict.unsupported_claims)
+        )
+    return update
+
+
+# ---------------------------------------------------------------------------
+# Router: the conditional edge after check
+# ---------------------------------------------------------------------------
+def after_check(state: AgentState) -> str:
+    if state["grounded"] or state.get("warning"):
+        return END            # done: either verified, or out of retries (with a warning)
+    return "generate"         # regenerate once, with the judge's feedback
 
 
 # ---------------------------------------------------------------------------
@@ -187,12 +261,14 @@ def build_graph():
     graph.add_node("rewrite", rewrite)
     graph.add_node("retrieve", retrieve)
     graph.add_node("generate", generate)
+    graph.add_node("check", check)
 
     graph.add_edge(START, "rewrite")
     graph.add_conditional_edges("rewrite", after_rewrite, ["retrieve", "generate"])
     # Conditional edge: after_retrieve() looks at the state and picks the next node.
     graph.add_conditional_edges("retrieve", after_retrieve, ["rewrite", "generate"])
-    graph.add_edge("generate", END)
+    graph.add_edge("generate", "check")
+    graph.add_conditional_edges("check", after_check, ["generate", END])
     return graph.compile()
 
 

@@ -37,10 +37,24 @@ def main() -> None:
                 for p in ps:
                     print(f"           {p['score']:.2f}  {'/'.join(p['source'].rstrip('/').split('/')[-2:])}")
             elif node == "generate":
-                print("[generate] answer written")
+                if update.get("generations"):
+                    print(f"[generate] answer written (attempt {update['generations']})")
+                else:
+                    print("[generate] fixed reply, no LLM call")
+            elif node == "check":
+                if update.get("check_skipped"):
+                    print("[check]    skipped: fixed reply makes no factual claims")
+                elif update["grounded"]:
+                    print("[check]    grounded: every statement is supported")
+                else:
+                    print(f"[check]    NOT grounded: {len(update['unsupported_claims'])} unsupported statement(s)")
+                    for c in update["unsupported_claims"]:
+                        print(f"           - {c}")
             final.update(update)
 
     print(f"\nA: {final['answer']}\n")
+    if final.get("warning"):
+        print(f"WARNING: {final['warning']}\n")
     if final.get("sources"):
         print("Sources:")
         for s in final["sources"]:

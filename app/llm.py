@@ -32,14 +32,16 @@ def generate(prompt: str, system: str, temperature: float = 0.2) -> str:
     return (resp.text or "").strip()
 
 
-def generate_json(prompt: str, system: str, schema: type[T], temperature: float = 0.0) -> T:
+def generate_json(
+    prompt: str, system: str, schema: type[T], temperature: float = 0.0, model: str | None = None
+) -> T:
     """
     One Gemini call returning a typed object (structured output).
     Gemini is constrained to produce JSON matching `schema`, and the SDK parses
     it into an instance of that Pydantic class, so there's no text cleanup needed.
     """
     resp = _client.models.generate_content(
-        model=config.GEMINI_MODEL,
+        model=model or config.GEMINI_MODEL,
         contents=prompt,
         config=_config(
             system,
